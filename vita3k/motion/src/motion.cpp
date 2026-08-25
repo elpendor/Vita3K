@@ -203,10 +203,6 @@ SceFVector3 get_basic_orientation(const MotionState &state) {
     return state.motion_data.GetBasicOrientation();
 }
 
-constexpr uint64_t to_microseconds(uint64_t ns) {
-    return ns / 1000;
-}
-
 template <typename SensorEvent>
 static void handle_motion_event(EmuEnvState &emuenv, int32_t sensor_type, const SensorEvent &sensor) {
     if (!emuenv.motion.is_sampling)
@@ -239,9 +235,17 @@ static void handle_motion_event(EmuEnvState &emuenv, int32_t sensor_type, const 
         return data;
     };
 
-    const uint64_t sensor_timestamp = (sensor.sensor_timestamp > 0)
-        ? to_microseconds(sensor.sensor_timestamp) // convert ns -> us
-        : std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    // Deliberately not `sensor.sensor_timestamp`. SDL documents that field as
+    // nanoseconds, but its Steam Deck HIDAPI driver reports microseconds on the
+    // release branch pinned by `external/sdl` -- fixed upstream in e1af6236 and
+    // not present here -- so converting it divides the elapsed time by another
+    // 1000 and the integration in `refresh_motion` never advances, which leaves
+    // motion controls dead on a Steam Deck while raw sensor values still arrive.
+    // Only the delta between updates is ever used, and a monotonic clock cannot
+    // disagree with itself about units.
+    const uint64_t sensor_timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+                                          .count();
 
     auto sensor_data = get_processed_sensor_data();
 
